@@ -3,19 +3,20 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { JwtService } from '@nestjs/jwt';
-import { LoginDto } from './dto/login.dto';
 import { UserRole } from 'src/user-role/entity/user-role.entity';
 import { UserRoleService } from 'src/user-role/entity/user-role.service';
+import { RefreshToken } from 'src/auth/entities/refresh-token.entity';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
+    //Injected directly rather than going through AuthService, which would make
+    //UserModule and AuthModule depend on each other
+    @InjectRepository(RefreshToken) private readonly refreshTokenRepository: Repository<RefreshToken>,
     private readonly userRoleService: UserRoleService,
-    private readonly jwtService: JwtService
   ) { }
 
   async register(createUserDto: CreateUserDto) {
@@ -55,27 +56,14 @@ export class UserService {
 
     await this.userRepository.save(newUser);
 
-    //Generate a JWT token to login the user immediately after registration
-    return this.jwtService.signAsync({ id: newUser.id, email: newUser.email });
+    //AuthService turns this into a token pair - registration still logs the user in
+    return newUser;
   }
 
-  async login(loginDto: LoginDto) {
-    const user = await this.findByEmail(loginDto.email);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    return this.jwtService.signAsync({ id: user.id, email: user.email });
-  }
-
-  //TODO: remove? or add auth guard? (+pagination)
-  findAll() {
-    return this.userRepository.find({ relations: ['roles'] });
+  //TODO: pagination
+  async findAll() {
+    const users = await this.userRepository.find({ relations: ['roles'] });
+    return users.map(user => this.toProfile(user));
   }
 
   // findOne(id: number) {
@@ -94,6 +82,7 @@ export class UserService {
   //Separating these subfunctions is the task of the frontend
   async update(id: string, updateUserDto: UpdateUserDto) {
     let updated = false;
+    let passwordChanged = false;
 
     const user = await this.findById(id);
     if (!user) {
@@ -151,12 +140,28 @@ export class UserService {
       if (!(await bcrypt.compare(updateUserDto.password, user.password))) {
         user.password = await bcrypt.hash(updateUserDto.password, 10);
         updated = true;
+        passwordChanged = true;
       }
     }
 
     if (updated) {
       await this.userRepository.save(user);
     }
+
+    //A password change should end every session, including the ones on other devices
+    if (passwordChanged) {
+      await this.revokeAllRefreshTokens(id);
+    }
+
+    return { profile: this.toProfile(user), passwordChanged };
+  }
+
+  //Used on password change and by the logout-all endpoint
+  async revokeAllRefreshTokens(userId: string) {
+    await this.refreshTokenRepository.update(
+      { userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
   }
 
   //Adds or removes a specific role to/from a user
@@ -194,10 +199,15 @@ export class UserService {
   // }
 
   async getProfile(id: string) {
-    const user = await this.userRepository.findOne({ where: { id }, relations: ['roles'] });
+    const user = await this.findById(id);
     if(!user) {
       throw new NotFoundException('User not found');
     }
+    return this.toProfile(user);
+  }
+
+  //The only shape a User may leave the service in - notably without the password hash
+  toProfile(user: User) {
     return {
       id: user.id,
       email: user.email,

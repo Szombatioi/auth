@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { Observable } from "rxjs";
+import { ACCESS_COOKIE } from "src/auth/cookie.util";
+import { UserTokenPayload } from "src/types/user-token-payload";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -8,13 +9,13 @@ export class AuthGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
-        const token = request.headers.authorization?.split(' ')[1];
+        const token = request.cookies?.[ACCESS_COOKIE];
         if (!token) {
             throw new UnauthorizedException('No token provided');
         }
 
         try{
-            const payload = await this.jwtService.verifyAsync(token);
+            const payload = await this.jwtService.verifyAsync<UserTokenPayload>(token);
             request.user = payload;
         } catch{
             throw new UnauthorizedException('Invalid or expired token');

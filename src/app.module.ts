@@ -4,9 +4,10 @@ import * as path from 'path';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { UserModule } from './user/user.module';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { UserRoleModule } from './user-role/entity/user-role.module';
 import { SeederModule } from './seed/seeder.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -20,10 +21,11 @@ import { SeederModule } from './seed/seeder.module';
   inject: [ConfigService],
   useFactory: async (configService: ConfigService) => {
     const secret = configService.get<string>('JWT_SECRET');
-    // console.log('JWT_SECRET loaded:', secret ? 'YES (exists)' : 'NO (undefined)'); 
     return {
       secret: secret,
-      signOptions: { expiresIn: '48h' },
+      signOptions: {
+        expiresIn: configService.get<string>('JWT_ACCESS_EXPIRES', '15m') as JwtSignOptions['expiresIn'],
+      },
     };
   },
 }),
@@ -43,6 +45,7 @@ import { SeederModule } from './seed/seeder.module';
     }),
     UserModule,
     UserRoleModule,
+    AuthModule,
     SeederModule
   ]
 })

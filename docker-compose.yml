@@ -30,6 +30,12 @@ services:
       DB_USERNAME: auth_admin
       DB_PASSWORD: auth_admin
       DB_DATABASE: auth_db
+      # The Dockerfile sets NODE_ENV=production, which would otherwise turn on
+      # Secure cookies and make the browser drop them over plain HTTP locally
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+      JWT_ACCESS_EXPIRES: 15m
+      REFRESH_TOKEN_EXPIRES_DAYS: 30
   
 volumes:
   postgres_data:
