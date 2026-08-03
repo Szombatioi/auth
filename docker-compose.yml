@@ -1,0 +1,35 @@
+services:
+  # PostgreSQL DB for auth service
+  auth-db:
+    image: postgres:15-alpine
+    container_name: dev_auth
+    environment:
+      POSTGRES_USER: auth_admin
+      POSTGRES_PASSWORD: auth_admin
+      POSTGRES_DB: auth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  # Authentication Service
+  auth-service:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    container_name: auth_service
+    ports:
+      - "8888:8888"
+    depends_on:
+      - auth-db
+    env_file:
+      - ./auth/.env
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_USERNAME: auth_admin
+      DB_PASSWORD: auth_admin
+      DB_DATABASE: auth_db
+  
+volumes:
+  postgres_data:

@@ -1,23 +1,29 @@
 # Stage 1: Build
-FROM node:20-alpine AS builder
+# Debian slim (glibc) rather than Alpine, so the native `bcrypt` module installs
+# from a prebuilt binary instead of compiling from source.
+FROM node:20-bookworm-slim AS builder
 
-WORKDIR /app
+WORKDIR /app/auth
 
-COPY package*.json ./
+# @hangbank/shared is referenced via a tsconfig path (../shared) — needed at build time
+COPY shared/ /app/shared/
+COPY auth/package*.json ./
 RUN npm install
 
-COPY . .
+COPY auth/ .
 RUN npm run build
 
 # Stage 2: Production
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-WORKDIR /app
+WORKDIR /app/auth
+ENV NODE_ENV=production
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/auth/package*.json ./
+COPY --from=builder /app/auth/node_modules ./node_modules
+COPY --from=builder /app/auth/dist ./dist
 
 EXPOSE 8888
 
-CMD ["node", "dist/main"]
+# Output nests under dist/src because the shared types path lives outside src/
+CMD ["node", "dist/src/main"]

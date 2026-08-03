@@ -4,6 +4,7 @@ import { UserRole } from "src/user-role/entity/user-role.entity";
 import { User } from "src/user/entities/user.entity";
 import { Repository } from "typeorm";
 import * as bcrypt from 'bcrypt';
+import { Gender } from "src/user/entities/gender.enum";
 
 Injectable()
 export class SeederService {
@@ -27,6 +28,8 @@ export class SeederService {
                 username: process.env.DEFAULT_ADMIN_USERNAME || 'admin',
                 firstName: process.env.DEFAULT_ADMIN_FIRST_NAME ||'Admin',
                 lastName: process.env.DEFAULT_ADMIN_LAST_NAME ||'User',
+                birthDate: new Date(),
+                gender: Gender.OTHER,
                 //we won't set roles here, we'll do it in the seedRoles method
             });
             await this.userRepository.save(admin);

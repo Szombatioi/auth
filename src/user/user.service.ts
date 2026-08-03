@@ -9,7 +9,6 @@ import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { UserRole } from 'src/user-role/entity/user-role.entity';
 import { UserRoleService } from 'src/user-role/entity/user-role.service';
-import { RelationIdMetadataToAttributeTransformer } from 'typeorm/browser/query-builder/relation-id/RelationIdMetadataToAttributeTransformer.js';
 
 @Injectable()
 export class UserService {
@@ -111,15 +110,48 @@ export class UserService {
       updated = true;
     }
 
+    if (updateUserDto.username && updateUserDto.username !== user.username) {
+      const existingUsername = await this.userRepository.findOne({ where: { username: updateUserDto.username } });
+      if (existingUsername && existingUsername.id !== user.id) {
+        throw new BadRequestException('User with this username already exists');
+      }
+      user.username = updateUserDto.username;
+      updated = true;
+    }
+
     if(updateUserDto.profilePictureUrl && updateUserDto.profilePictureUrl !== user.profilePictureUrl) {
       user.profilePictureUrl = updateUserDto.profilePictureUrl;
       updated = true;
     }
 
-    //Changing password endpoint
-    if(updateUserDto.password && !(await bcrypt.compare(updateUserDto.password, user.password))) {
-      user.password = await bcrypt.hash(updateUserDto.password, 10);
+    if (updateUserDto.gender !== undefined && updateUserDto.gender !== user.gender) {
+      user.gender = updateUserDto.gender;
       updated = true;
+    }
+
+    if (updateUserDto.birthDate !== undefined) {
+      const incoming = new Date(updateUserDto.birthDate).toISOString();
+      const existing = user.birthDate ? new Date(user.birthDate).toISOString() : null;
+      if (incoming !== existing) {
+        user.birthDate = new Date(updateUserDto.birthDate);
+        updated = true;
+      }
+    }
+
+    //Changing password: verify the current password before applying the new one
+    if (updateUserDto.password) {
+      if (!updateUserDto.currentPassword) {
+        throw new BadRequestException('Current password is required to change the password');
+      }
+      const currentPasswordValid = await bcrypt.compare(updateUserDto.currentPassword, user.password);
+      if (!currentPasswordValid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+      //Only persist if the new password actually differs from the current one
+      if (!(await bcrypt.compare(updateUserDto.password, user.password))) {
+        user.password = await bcrypt.hash(updateUserDto.password, 10);
+        updated = true;
+      }
     }
 
     if (updated) {
@@ -160,4 +192,22 @@ export class UserService {
   // remove(id: number) {
   //   return `This action removes a #${id} user`;
   // }
+
+  async getProfile(id: string) {
+    const user = await this.userRepository.findOne({ where: { id }, relations: ['roles'] });
+    if(!user) {
+      throw new NotFoundException('User not found');
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profilePictureUrl: user.profilePictureUrl,
+      roles: user.roles,
+      gender: user.gender ?? null,
+      birthDate: user.birthDate ?? null,
+    };
+  }
 }
